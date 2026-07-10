@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axol the Axolotl — Seashell Adventure</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: #012a4a;
+    font-family: 'Comic Sans MS', 'Trebuchet MS', sans-serif;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #wrap {
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  canvas { display: block; background: #013a63; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #fff;
+    background: rgba(1, 42, 74, 0.82);
+    backdrop-filter: blur(2px);
+    padding: 24px;
+  }
+  .overlay h1 {
+    font-size: 44px;
+    color: #ffd6e0;
+    text-shadow: 0 3px 0 #b5179e, 0 0 20px rgba(255,214,224,0.5);
+    margin-bottom: 8px;
+  }
+  .overlay h2 {
+    font-size: 28px;
+    color: #caf0f8;
+    margin-bottom: 14px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .overlay p { font-size: 18px; color: #ade8f4; margin: 6px 0; line-height: 1.5; }
+  .keycap {
+    display: inline-block;
+    background: #caf0f8;
+    color: #013a63;
+    border-radius: 8px;
+    padding: 3px 12px;
+    margin: 0 3px;
+    font-weight: bold;
+    box-shadow: 0 3px 0 #7ec8e3;
+  }
+  button {
+    margin-top: 22px;
+    font-family: inherit;
+    font-size: 24px;
+    font-weight: bold;
+    color: #013a63;
+    background: linear-gradient(#ffe08a, #ffb703);
+    border: none;
+    border-radius: 40px;
+    padding: 14px 40px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #d68f00, 0 8px 20px rgba(0,0,0,0.35);
+    transition: transform .08s, box-shadow .08s;
+  }
+  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #d68f00; }
+  .hidden { display: none; }
+  .small { font-size: 15px; color: #90e0ef; margin-top: 18px; }
+
+  #speedControls {
+    position: absolute;
+    left: 12px; bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(1, 42, 74, 0.55);
+    padding: 6px 10px;
+    border-radius: 30px;
+    backdrop-filter: blur(2px);
+    color: #fff; font-size: 14px;
+    z-index: 5;
+  }
+  #speedControls button {
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 16px;
+    border-radius: 20px;
+    box-shadow: 0 3px 0 #d68f00;
+  }
+  #speedControls button:active { transform: translateY(3px); box-shadow: 0 0 0 #d68f00; }
+  #speedLabel { min-width: 96px; text-align: center; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="900" height="560"></canvas>
+
+  <div id="speedControls">
+    <button id="slowerBtn" title="Swim slower">🐢 −</button>
+    <span id="speedLabel">Speed: 100%</span>
+    <button id="fasterBtn" title="Swim faster">＋ 🐇</button>
+  </div>
+
+  <div id="startScreen" class="overlay">
+    <h1>🌊 Axol's Seashell Adventure 🐙</h1>
+    <h2>Help Axol the Axolotl collect all the seashells!</h2>
+    <p><span class="keycap">←</span> <span class="keycap">→</span> or <span class="keycap">A</span> <span class="keycap">D</span> to swim left & right</p>
+    <p><span class="keycap">Space</span> / <span class="keycap">↑</span> / <span class="keycap">W</span> to jump — tap twice to double-jump!</p>
+    <p><span class="keycap">Right-click</span> to swing your sword ⚔️ and battle sea creatures!</p>
+    <p>🐚 Grab every seashell &nbsp; ⭐ Reach the treasure chest to dive deeper</p>
+    <p>Swim through <b>5 ocean zones</b> — pufferfish 🐡, crabs 🦀, jellyfish, anglerfish — then face the <b>KRAKEN</b> 🐙!</p>
+    <button id="startBtn">Start Swimming!</button>
+    <div class="small">Best played with sound on 🔊</div>
+  </div>
+
+  <div id="endScreen" class="overlay hidden">
+    <h1 id="endTitle">You did it! 🏆</h1>
+    <h2 id="endMsg"></h2>
+    <p id="endStats"></p>
+    <button id="restartBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ---------- Sound (tiny WebAudio blips, no files needed) ----------
+let audioCtx = null;
+function beep(freq, dur, type='sine', vol=0.15) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    o.frequency.exponentialRampToValueAtTime(freq * 1.5, audioCtx.currentTime + dur);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+const sfx = {
+  jump:  () => beep(420, 0.15, 'square', 0.10),
+  shell: () => { beep(700, 0.10, 'sine', 0.15); setTimeout(()=>beep(950,0.12,'sine',0.15),90); },
+  win:   () => { [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.2,'triangle',0.18),i*140)); },
+  hurt:  () => beep(160, 0.3, 'sawtooth', 0.14),
+  swing: () => beep(300, 0.12, 'sawtooth', 0.07),
+  hit:   () => { beep(220, 0.08, 'square', 0.16); setTimeout(()=>beep(110,0.16,'square',0.14),55); },
+  oneup: () => { [660,880,1100,1320].forEach((f,i)=>setTimeout(()=>beep(f,0.14,'triangle',0.18),i*80)); },
+};
+
+// ---------- Input ----------
+const keys = {};
+addEventListener('keydown', e => {
+  if (['ArrowLeft','ArrowRight','ArrowUp','Space',' '].includes(e.key)) e.preventDefault();
+  keys[e.key.toLowerCase()] = true;
+  keys[e.code] = true;
+});
+addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+  keys[e.code] = false;
+});
+
+// Right-click swings the sword (and don't show the browser menu)
+function doSwing() {
+  if (state !== 'playing') return;
+  if (player.swing > 0 || player.swingCd > 0) return;
+  player.swing = 10;      // frames the swing animation/hitbox lasts (faster)
+  player.swingCd = 8;     // frames until you can swing again (faster)
+  sfx.swing();
+}
+canvas.addEventListener('contextmenu', e => { e.preventDefault(); doSwing(); });
+
+// ---------- World / Level ----------
+const GRAV = 0.55;      // original gentle underwater gravity
+const SWIM_ACC = 0.78;  // slightly slower than default
+const MAX_SPD = 4.3;    // slightly slower than default, still carries jumps across gaps
+const FRICTION = 0.80;
+const JUMP_V = -11.5;   // original jump
+const ENEMY_SPEED = 0.75; // global multiplier so every creature swims a bit calmer
+
+// ---------- Level definitions ----------
+// Each level: width of the world, platforms, seashell spots, pufferfish, and the goal chest.
+const LEVELS = [
+  { // Level 1 — Coral Cove: sunlit shallows, playful PUFFERFISH
+    name: 'Coral Cove',
+    width: 2600,
+    tint: ['#0197c0', '#0277a8', '#013a63'],
+    goal: { x: 2360, y: 460, w: 60, h: 56 },
+    platforms: [
+      { x: 260, y: 445, w: 175, h: 22 }, { x: 460, y: 400, w: 170, h: 22 },
+      { x: 650, y: 360, w: 170, h: 22 }, { x: 840, y: 400, w: 175, h: 22 },
+      { x: 1040,y: 360, w: 170, h: 22 }, { x: 1230,y: 325, w: 170, h: 22 },
+      { x: 1420,y: 365, w: 170, h: 22 }, { x: 1610,y: 405, w: 170, h: 22 },
+      { x: 1800,y: 365, w: 170, h: 22 }, { x: 1990,y: 330, w: 180, h: 22 },
+    ],
+    shells: [
+      {x: 335, y: 400}, {x: 530, y: 355}, {x: 720, y: 315}, {x: 915, y: 355},
+      {x: 1110, y: 315}, {x: 1300, y: 280}, {x: 1490, y: 320}, {x: 1680, y: 360},
+      {x: 1870, y: 320}, {x: 2065, y: 285}, {x: 150, y: 485}, {x: 2250, y: 485},
+    ],
+    enemies: [
+      {type:'puffer', x: 900, y: 470, minX: 860, maxX: 1050, dir: 1, spd: 1.1, phase: 0},
+      {type:'puffer', x: 1560, y: 330, minX: 1560, maxX: 1690, dir: 1, spd: 1.3, phase: 1},
+      {type:'puffer', x: 2020, y: 310, minX: 2020, maxX: 2150, dir: 1, spd: 1.4, phase: 2},
+      {type:'puffer', x: 500, y: 470, minX: 420, maxX: 640, dir: 1, spd: 1.2, phase: 3},
+      {type:'puffer', x: 1200, y: 470, minX: 1080, maxX: 1330, dir: 1, spd: 1.3, phase: 4},
+      {type:'puffer', x: 1800, y: 400, minX: 1780, maxX: 1930, dir: 1, spd: 1.5, phase: 5},
+    ],
+  },
+  { // Level 2 — Kelp Forest: green thickets, snapping CRABS + a couple pufferfish
+    name: 'Kelp Forest',
+    width: 2800,
+    tint: ['#0a8f6f', '#076b52', '#023d30'],
+    goal: { x: 2620, y: 460, w: 60, h: 56 },
+    platforms: [
+      { x: 240, y: 440, w: 130, h: 22 }, { x: 450, y: 360, w: 120, h: 22 },
+      { x: 660, y: 430, w: 120, h: 22 }, { x: 880, y: 350, w: 120, h: 22 },
+      { x: 1100,y: 280, w: 120, h: 22 }, { x: 1330,y: 360, w: 120, h: 22 },
+      { x: 1560,y: 430, w: 120, h: 22 }, { x: 1780,y: 340, w: 120, h: 22 },
+      { x: 2000,y: 400, w: 120, h: 22 }, { x: 2230,y: 320, w: 130, h: 22 },
+      { x: 2460,y: 400, w: 130, h: 22 },
+    ],
+    shells: [
+      {x: 300, y: 405}, {x: 510, y: 325}, {x: 720, y: 395}, {x: 940, y: 315},
+      {x: 1160, y: 245}, {x: 1390, y: 325}, {x: 1620, y: 395}, {x: 1840, y: 305},
+      {x: 2060, y: 365}, {x: 2290, y: 285}, {x: 2520, y: 365}, {x: 1000, y: 485},
+    ],
+    enemies: [
+      {type:'crab', x: 600, y: 498, minX: 520, maxX: 760, dir: 1, spd: 1.4, phase: 0},
+      {type:'crab', x: 1200, y: 498, minX: 1080, maxX: 1340, dir: 1, spd: 1.5, phase: 1},
+      {type:'crab', x: 1900, y: 498, minX: 1780, maxX: 2020, dir: 1, spd: 1.6, phase: 2},
+      {type:'crab', x: 2400, y: 498, minX: 2300, maxX: 2560, dir: 1, spd: 1.5, phase: 3},
+      {type:'puffer', x: 900, y: 330, minX: 880, maxX: 1020, dir: 1, spd: 1.4, phase: 4},
+      {type:'puffer', x: 1600, y: 320, minX: 1560, maxX: 1700, dir: 1, spd: 1.5, phase: 5},
+    ],
+  },
+  { // Level 3 — Twilight Zone: dim purple water, drifting JELLYFISH (float up & down)
+    name: 'Twilight Zone',
+    width: 2800,
+    tint: ['#3b3a7a', '#2a2359', '#140b33'],
+    goal: { x: 2620, y: 460, w: 60, h: 56 },
+    platforms: [
+      { x: 240, y: 420, w: 120, h: 22 }, { x: 470, y: 350, w: 120, h: 22 },
+      { x: 700, y: 420, w: 120, h: 22 }, { x: 930, y: 340, w: 120, h: 22 },
+      { x: 1160,y: 280, w: 120, h: 22 }, { x: 1390,y: 360, w: 120, h: 22 },
+      { x: 1620,y: 300, w: 120, h: 22 }, { x: 1850,y: 380, w: 120, h: 22 },
+      { x: 2080,y: 320, w: 120, h: 22 }, { x: 2310,y: 400, w: 130, h: 22 },
+      { x: 2520,y: 320, w: 130, h: 22 },
+    ],
+    shells: [
+      {x: 300, y: 385}, {x: 530, y: 315}, {x: 760, y: 385}, {x: 990, y: 305},
+      {x: 1220, y: 245}, {x: 1450, y: 325}, {x: 1680, y: 265}, {x: 1910, y: 345},
+      {x: 2140, y: 285}, {x: 2370, y: 365}, {x: 2580, y: 285}, {x: 1000, y: 485},
+    ],
+    enemies: [
+      {type:'jelly', x: 600, y: 300, minY: 240, maxY: 420, dir: 1, spd: 1.0, phase: 0},
+      {type:'jelly', x: 1000, y: 360, minY: 260, maxY: 440, dir: -1, spd: 1.1, phase: 1},
+      {type:'jelly', x: 1400, y: 280, minY: 220, maxY: 400, dir: 1, spd: 1.2, phase: 2},
+      {type:'jelly', x: 1800, y: 340, minY: 250, maxY: 430, dir: -1, spd: 1.1, phase: 3},
+      {type:'jelly', x: 2200, y: 300, minY: 240, maxY: 420, dir: 1, spd: 1.2, phase: 4},
+      {type:'jelly', x: 2500, y: 360, minY: 260, maxY: 440, dir: -1, spd: 1.0, phase: 5},
+    ],
+  },
+  { // Level 4 — Midnight Zone: near-black depths, fast glowing ANGLERFISH
+    name: 'Midnight Zone',
+    width: 3000,
+    tint: ['#0a1a3a', '#050f26', '#020814'],
+    goal: { x: 2780, y: 460, w: 60, h: 56 },
+    platforms: [
+      { x: 220, y: 440, w: 120, h: 22 }, { x: 440, y: 360, w: 110, h: 22 },
+      { x: 660, y: 300, w: 110, h: 22 }, { x: 880, y: 380, w: 110, h: 22 },
+      { x: 1100,y: 300, w: 110, h: 22 }, { x: 1320,y: 400, w: 110, h: 22 },
+      { x: 1540,y: 320, w: 110, h: 22 }, { x: 1760,y: 260, w: 110, h: 22 },
+      { x: 1980,y: 360, w: 110, h: 22 }, { x: 2200,y: 300, w: 110, h: 22 },
+      { x: 2420,y: 400, w: 120, h: 22 }, { x: 2640,y: 320, w: 130, h: 22 },
+    ],
+    shells: [
+      {x: 280, y: 405}, {x: 495, y: 325}, {x: 715, y: 265}, {x: 935, y: 345},
+      {x: 1155, y: 265}, {x: 1375, y: 365}, {x: 1595, y: 285}, {x: 1815, y: 225},
+      {x: 2035, y: 325}, {x: 2255, y: 265}, {x: 2475, y: 365}, {x: 2700, y: 285},
+    ],
+    enemies: [
+      {type:'angler', x: 700, y: 300, minX: 640, maxX: 900, dir: 1, spd: 2.0, phase: 0},
+      {type:'angler', x: 1100, y: 280, minX: 1040, maxX: 1300, dir: 1, spd: 2.1, phase: 1},
+      {type:'angler', x: 1550, y: 300, minX: 1500, maxX: 1760, dir: 1, spd: 2.2, phase: 2},
+      {type:'angler', x: 2000, y: 470, minX: 1900, maxX: 2200, dir: 1, spd: 1.9, phase: 3},
+      {type:'angler', x: 2450, y: 380, minX: 2400, maxX: 2660, dir: 1, spd: 2.2, phase: 4},
+      {type:'angler', x: 1300, y: 470, minX: 1200, maxX: 1450, dir: 1, spd: 2.0, phase: 5},
+    ],
+  },
+  { // Level 5 — Kraken's Lair: the abyss. Dodge EELS, then battle the KRAKEN boss!
+    name: "Kraken's Lair",
+    width: 2400,
+    tint: ['#1a0a2e', '#0d0620', '#03010a'],
+    boss: true,
+    spawn: 1200,
+    goal: { x: 2340, y: 460, w: 60, h: 56 },
+    platforms: [
+      { x: 260, y: 430, w: 130, h: 22 }, { x: 500, y: 350, w: 120, h: 22 },
+      { x: 740, y: 420, w: 120, h: 22 }, { x: 980, y: 340, w: 120, h: 22 },
+      { x: 1220,y: 420, w: 140, h: 22 }, { x: 1500,y: 430, w: 160, h: 22 },
+      { x: 1780,y: 430, w: 160, h: 22 }, { x: 2040,y: 400, w: 160, h: 22 },
+    ],
+    shells: [
+      {x: 320, y: 395}, {x: 560, y: 315}, {x: 800, y: 385},
+      {x: 1040, y: 305}, {x: 1280, y: 385}, {x: 1560, y: 395},
+    ],
+    enemies: [
+      {type:'eel', x: 1400, y: 470, minX: 1300, maxX: 1600, dir: 1, spd: 1.6, phase: 0},
+      {type:'eel', x: 1900, y: 340, minX: 1820, maxX: 2080, dir: 1, spd: 1.7, phase: 1},
+      {type:'kraken', x: 2050, y: 300, minX: 1850, maxX: 2200, dir: 1, spd: 0.8, phase: 0, hp: 5},
+    ],
+  },
+];
+
+// Extra-life "1-UP" hearts hidden in each level (index matches LEVELS)
+const ONEUPS = [
+  [{x: 1110, y: 295}, {x: 1870, y: 300}],  // Coral Cove
+  [{x: 1110, y: 245}, {x: 2240, y: 285}],  // Kelp Forest
+  [{x: 1170, y: 245}, {x: 2090, y: 285}],  // Twilight Zone
+  [{x: 670, y: 265}, {x: 2210, y: 265}],   // Midnight Zone
+  [{x: 990, y: 305}, {x: 1510, y: 395}],   // Kraken's Lair
+];
+const MAX_LIVES = 6;
+
+// Active-level state (filled in by loadLevel)
+let currentLevel = 0;
+let worldW = 2600;
+let platforms = [];
+let shells = [];
+let oneups = [];
+let enemies = [];
+let goal = null;
+let tint = LEVELS[0].tint;
+let spawnX = 60;
+
+function loadLevel(idx) {
+  currentLevel = idx;
+  const L = LEVELS[idx];
+  worldW = L.width;
+  tint = L.tint;
+  goal = L.goal;
+  spawnX = L.spawn || 60;
+  // seabed floor (solid) spans the whole level; the floating platforms are pass-through
+  platforms = [{ x: 0, y: 520, w: L.width, h: 60, solid: true }, ...L.platforms];
+  resetShells();
+  resetOneups();
+  resetEnemies();
+}
+
+function resetShells() {
+  shells = LEVELS[currentLevel].shells.map(s => ({...s, got: false, bob: Math.random()*Math.PI*2}));
+}
+function resetOneups() {
+  oneups = (ONEUPS[currentLevel] || []).map(o => ({...o, got: false, bob: Math.random()*Math.PI*2}));
+}
+function resetEnemies() {
+  enemies = LEVELS[currentLevel].enemies.map(e => ({
+    ...e, alive: true, hp: e.hp || 1, hitCd: 0, flash: 0, baseY: e.y,
+  }));
+}
+
+// ---------- Player ----------
+const player = {
+  x: 60, y: 460, w: 42, h: 34,
+  vx: 0, vy: 0, onGround: false,
+  facing: 1, jumps: 0, maxJumps: 2,
+  wiggle: 0, invuln: 0,
+  swing: 0, swingCd: 0,
+};
+
+let camX = 0;
+let score = 0;
+let lives = 3;
+let kills = 0;
+let pops = []; // death-poof effects {x,y,life}
+let state = 'start'; // start | playing | won | lost
+let time = 0;
+let bannerText = '';
+let bannerTime = 0;
+let bubbles = [];
+for (let i=0;i<40;i++) bubbles.push({x:Math.random()*3200, y:Math.random()*H, r:2+Math.random()*5, s:0.3+Math.random()*0.8});
+
+function resetPlayer() {
+  player.x = spawnX; player.y = 460; player.vx = 0; player.vy = 0;
+  player.jumps = 0; player.invuln = 90; player.facing = 1;
+}
+
+function startGame() {
+  score = 0; lives = 3; kills = 0; time = 0; pops = [];
+  loadLevel(0); resetPlayer(); camX = 0;
+  showBanner('Level 1: ' + LEVELS[0].name + '!');
+  state = 'playing';
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('endScreen').classList.add('hidden');
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+}
+
+function showBanner(text) { bannerText = text; bannerTime = 150; }
+
+// Retry the CURRENT level (used after a game over) — don't drop back to Level 1
+function retryLevel() {
+  lives = 3; kills = 0; pops = [];
+  loadLevel(currentLevel); resetPlayer(); camX = 0;
+  showBanner('Level ' + (currentLevel + 1) + ': ' + LEVELS[currentLevel].name + '!');
+  state = 'playing';
+  document.getElementById('endScreen').classList.add('hidden');
+}
+
+// Reached the chest with every shell — advance a level or win the game
+function reachGoal() {
+  if (currentLevel < LEVELS.length - 1) {
+    sfx.win();
+    loadLevel(currentLevel + 1);
+    resetPlayer(); camX = 0;
+    showBanner('Level ' + (currentLevel + 1) + ': ' + LEVELS[currentLevel].name + '!');
+  } else {
+    winGame();
+  }
+}
+
+// ---------- Physics helpers ----------
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+let jumpHeld = false;
+
+// ---------- Live swim-speed control (buttons) ----------
+let speedMult = 0.7; // 70% feels right by default; buttons still adjust it
+try { const s = parseFloat(localStorage.getItem('axolSpeed')); if (s > 0) speedMult = s; } catch (e) {}
+
+function refreshSpeedLabel() {
+  document.getElementById('speedLabel').textContent = 'Speed: ' + Math.round(speedMult * 100) + '%';
+}
+function changeSpeed(delta) {
+  speedMult = Math.max(0.4, Math.min(1.8, Math.round((speedMult + delta) * 100) / 100));
+  refreshSpeedLabel();
+  try { localStorage.setItem('axolSpeed', speedMult); } catch (e) {}
+}
+document.getElementById('slowerBtn').onclick = (e) => { changeSpeed(-0.1); e.currentTarget.blur(); };
+document.getElementById('fasterBtn').onclick = (e) => { changeSpeed(0.1); e.currentTarget.blur(); };
+refreshSpeedLabel();
+
+function update() {
+  time += 1/60;
+  // Horizontal input
+  const acc = SWIM_ACC * speedMult, maxspd = MAX_SPD * speedMult;
+  if (keys['arrowleft'] || keys['a']) { player.vx -= acc; player.facing = -1; }
+  if (keys['arrowright']|| keys['d']) { player.vx += acc; player.facing = 1; }
+  player.vx = Math.max(-maxspd, Math.min(maxspd, player.vx));
+  if (!(keys['arrowleft']||keys['a']||keys['arrowright']||keys['d'])) player.vx *= FRICTION;
+
+  // Jump (with double jump)
+  const jumpKey = keys['space'] || keys[' '] || keys['arrowup'] || keys['w'] || keys['Space'];
+  if (jumpKey && !jumpHeld && player.jumps < player.maxJumps) {
+    player.vy = JUMP_V;
+    player.jumps++;
+    jumpHeld = true;
+    sfx.jump();
+  }
+  if (!jumpKey) jumpHeld = false;
+
+  // Gravity (buoyant, gentle)
+  player.vy += GRAV;
+  if (player.vy > 11) player.vy = 11; // water resistance / terminal fall
+
+  // Move X + collide (only the solid seabed blocks sideways; floating platforms are pass-through)
+  player.x += player.vx;
+  for (const p of platforms) {
+    if (!p.solid) continue;
+    if (rectsOverlap(player, p)) {
+      if (player.vx > 0) player.x = p.x - player.w;
+      else if (player.vx < 0) player.x = p.x + p.w;
+      player.vx = 0;
+    }
+  }
+  if (player.x < 0) player.x = 0;
+
+  // Move Y + collide
+  player.onGround = false;
+  const feetBefore = player.y + player.h; // where Axol's feet were before this vertical step
+  player.y += player.vy;
+  for (const p of platforms) {
+    if (!rectsOverlap(player, p)) continue;
+    if (p.solid) {
+      // full collision (land on top, bonk from below)
+      if (player.vy > 0) { player.y = p.y - player.h; player.onGround = true; player.jumps = 0; }
+      else if (player.vy < 0) player.y = p.y + p.h;
+      player.vy = 0;
+    } else if (player.vy > 0 && feetBefore <= p.y + 1) {
+      // one-way platform: only catch Axol when he's falling onto the top from above
+      player.y = p.y - player.h; player.onGround = true; player.jumps = 0; player.vy = 0;
+    }
+    // otherwise (rising, or coming from the side/below): pass straight through
+  }
+
+  // Fell off bottom
+  if (player.y > H + 100) loseLife();
+
+  if (player.invuln > 0) player.invuln--;
+  if (player.swing > 0) player.swing--;
+  if (player.swingCd > 0) player.swingCd--;
+  player.wiggle += 0.2;
+
+  if (bannerTime > 0) bannerTime--;
+
+  // Camera follows
+  camX = player.x - W*0.35;
+  camX = Math.max(0, Math.min(camX, worldW - W));
+
+  // Shells
+  for (const s of shells) {
+    if (s.got) continue;
+    s.bob += 0.08;
+    if (Math.abs((player.x+player.w/2) - s.x) < 30 && Math.abs((player.y+player.h/2) - s.y) < 30) {
+      s.got = true; score++; sfx.shell();
+    }
+  }
+
+  // 1-UP hearts — grab one for an extra life
+  for (const o of oneups) {
+    if (o.got) continue;
+    o.bob += 0.08;
+    if (Math.abs((player.x+player.w/2) - o.x) < 32 && Math.abs((player.y+player.h/2) - o.y) < 32) {
+      o.got = true;
+      if (lives < MAX_LIVES) lives++;
+      sfx.oneup();
+      pops.push({ x: o.x, y: o.y, life: 24 });
+      bannerText = '1-UP!  ❤️'; bannerTime = 70;
+    }
+  }
+
+  // Sword hitbox — active during the middle of a swing, reaches out in front of Axol
+  let swordBox = null;
+  if (player.swing > 1 && player.swing < 10) {
+    const reach = 50;
+    const sx = player.facing === 1 ? player.x + player.w - 8 : player.x - reach + 8;
+    swordBox = { x: sx, y: player.y - 8, w: reach, h: player.h + 16 };
+  }
+
+  // Enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    updateEnemy(e);
+    const eb = enemyBox(e);
+    // Sword strike beats contact damage — a landed swing saves you
+    if (swordBox && e.hitCd <= 0 && rectsOverlap(swordBox, eb)) {
+      if (e.hp > 1) {
+        // Tough foe (the kraken): chip away with each hit
+        e.hp--; e.hitCd = 16; e.flash = 8;
+        pops.push({ x: e.x, y: e.y - 20, life: 14 });
+        sfx.hit();
+      } else {
+        e.alive = false; kills++;
+        pops.push({ x: e.x, y: e.y, life: 20 });
+        sfx.hit();
+      }
+      continue;
+    }
+    if (player.invuln <= 0 && rectsOverlap(player, eb)) loseLife();
+  }
+
+  // Death poofs
+  for (const p of pops) p.life--;
+  pops = pops.filter(p => p.life > 0);
+
+  // Bubbles rise
+  for (const b of bubbles) {
+    b.y -= b.s;
+    if (b.y < -10) { b.y = H + 10; b.x = camX + Math.random()*W; }
+  }
+
+  // Level completion
+  if (LEVELS[currentLevel].boss) {
+    // Boss level: beating the kraken wins
+    const k = enemies.find(e => e.type === 'kraken');
+    if (k && !k.alive) reachGoal();
+  } else if (rectsOverlap(player, goal) && shells.every(s => s.got)) {
+    reachGoal();
+  }
+}
+
+// ---------- Enemy behaviour ----------
+function updateEnemy(e) {
+  e.phase += 0.05;
+  if (e.hitCd > 0) e.hitCd--;
+  if (e.flash > 0) e.flash--;
+  const sp = e.spd * ENEMY_SPEED;
+  if (e.type === 'jelly') {
+    // drift up and down
+    e.y += e.dir * sp;
+    if (e.y < e.minY || e.y > e.maxY) e.dir *= -1;
+  } else if (e.type === 'kraken') {
+    // slow patrol with a heavy vertical bob
+    e.x += e.dir * sp;
+    if (e.x < e.minX || e.x > e.maxX) e.dir *= -1;
+    e.y = e.baseY + Math.sin(e.phase) * 26;
+  } else {
+    // horizontal patrol (puffer, crab, angler, eel)
+    e.x += e.dir * sp;
+    if (e.x < e.minX || e.x > e.maxX) e.dir *= -1;
+  }
+}
+
+// Collision box per creature type
+function enemyBox(e) {
+  switch (e.type) {
+    case 'kraken': return { x: e.x - 48, y: e.y - 46, w: 96, h: 104 };
+    case 'crab':   return { x: e.x - 20, y: e.y - 12, w: 40, h: 24 };
+    case 'jelly':  return { x: e.x - 16, y: e.y - 18, w: 32, h: 40 };
+    case 'angler': return { x: e.x - 22, y: e.y - 15, w: 44, h: 30 };
+    case 'eel':    return { x: e.x - 22, y: e.y - 13, w: 44, h: 26 };
+    default:       return { x: e.x - 16, y: e.y - 16, w: 32, h: 32 }; // puffer
+  }
+}
+
+function loseLife() {
+  if (player.invuln > 0) return;
+  lives--;
+  sfx.hurt();
+  if (lives <= 0) { loseGame(); }
+  else { resetPlayer(); }
+}
+
+function winGame() {
+  state = 'won';
+  sfx.win();
+  document.getElementById('endTitle').textContent = 'You beat the game! 🏆🐚';
+  document.getElementById('endMsg').textContent = `Axol cleared all ${LEVELS.length} levels!`;
+  document.getElementById('endStats').textContent =
+    `Finished in ${time.toFixed(1)}s with ${lives} ${lives===1?'life':'lives'} left and ${kills} pufferfish zapped! 🌟`;
+  document.getElementById('restartBtn').textContent = 'Play Again';
+  document.getElementById('endScreen').classList.remove('hidden');
+}
+
+function loseGame() {
+  state = 'lost';
+  document.getElementById('endTitle').textContent = 'Oh no! 🫧';
+  document.getElementById('endMsg').textContent = 'The pufferfish got Axol!';
+  const collected = shells.filter(s=>s.got).length;
+  document.getElementById('endStats').textContent =
+    `Level ${currentLevel + 1}: you collected ${collected} of ${shells.length} seashells. Try this level again!`;
+  document.getElementById('restartBtn').textContent = 'Retry Level ' + (currentLevel + 1);
+  document.getElementById('endScreen').classList.remove('hidden');
+}
+
+// ---------- Drawing ----------
+function draw() {
+  // Water gradient background
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, tint[0]);
+  g.addColorStop(0.5, tint[1]);
+  g.addColorStop(1, tint[2]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Sun rays
+  ctx.save();
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = '#eaffff';
+  for (let i=0;i<6;i++) {
+    const rx = ((i*220 - camX*0.3) % (W+300)) - 150;
+    ctx.beginPath();
+    ctx.moveTo(rx, 0); ctx.lineTo(rx+80, 0); ctx.lineTo(rx+200, H); ctx.lineTo(rx+40, H);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(-camX, 0);
+
+  // Background seaweed
+  for (let i=0;i<26;i++) {
+    const wx = i*110 + 40;
+    drawSeaweed(wx, 520, i);
+  }
+
+  // Bubbles (behind)
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  for (const b of bubbles) {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Platforms (coral rock)
+  for (const p of platforms) drawPlatform(p);
+
+  // Goal treasure chest (not on the boss level — the kraken is the goal there)
+  if (!LEVELS[currentLevel].boss) drawChest(goal);
+
+  // 1-UP hearts
+  for (const o of oneups) {
+    if (!o.got) drawOneUp(o.x, o.y + Math.sin(o.bob)*4);
+  }
+
+  // Shells
+  for (const s of shells) {
+    if (s.got) continue;
+    drawShell(s.x, s.y + Math.sin(s.bob)*4);
+  }
+
+  // Enemies
+  for (const e of enemies) if (e.alive) drawEnemy(e);
+
+  // Death poofs
+  for (const p of pops) drawPop(p);
+
+  // Player
+  drawAxolotl(player);
+
+  ctx.restore();
+
+  // HUD
+  drawHUD();
+
+  // Boss health bar
+  if (LEVELS[currentLevel].boss) drawBossBar();
+
+  // Level banner (fades in/out on level start)
+  if (bannerTime > 0) drawBanner();
+}
+
+// Dispatch to the right creature drawing
+function drawEnemy(e) {
+  ctx.save();
+  if (e.flash > 0 && Math.floor(e.flash/2) % 2 === 0) {
+    // white flash when a tough foe is struck
+    ctx.globalAlpha = 0.6;
+  }
+  switch (e.type) {
+    case 'crab':   drawCrab(e); break;
+    case 'jelly':  drawJelly(e); break;
+    case 'angler': drawAngler(e); break;
+    case 'eel':    drawEel(e); break;
+    case 'kraken': drawKraken(e); break;
+    default:       drawPuffer(e);
+  }
+  ctx.restore();
+}
+
+function drawBossBar() {
+  const k = enemies.find(e => e.type === 'kraken');
+  if (!k) return;
+  const maxHp = LEVELS[currentLevel].enemies.find(e => e.type === 'kraken').hp;
+  const bw = 360, bh = 20, bx = (W - bw)/2, by = 52;
+  ctx.save();
+  ctx.font = 'bold 18px "Comic Sans MS", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffd6e0';
+  ctx.fillText('🐙 KRAKEN', W/2, by - 6);
+  // frame
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(bx-3, by-3, bw+6, bh+6, 8); ctx.fill();
+  ctx.fillStyle = '#3a1030';
+  roundRect(bx, by, bw, bh, 6); ctx.fill();
+  // health
+  const frac = k.alive ? Math.max(0, k.hp) / maxHp : 0;
+  const gr = ctx.createLinearGradient(bx, 0, bx+bw, 0);
+  gr.addColorStop(0, '#ff5c8a'); gr.addColorStop(1, '#b5179e');
+  ctx.fillStyle = gr;
+  roundRect(bx, by, bw*frac, bh, 6); ctx.fill();
+  ctx.restore();
+}
+
+function drawBanner() {
+  const t = bannerTime;
+  const alpha = t > 120 ? (150 - t)/30 : (t < 40 ? t/40 : 1); // ease in then out
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 46px "Comic Sans MS", sans-serif';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = 'rgba(1,42,74,0.85)';
+  ctx.fillStyle = '#ffe08a';
+  ctx.strokeText(bannerText, W/2, H/2 - 20);
+  ctx.fillText(bannerText, W/2, H/2 - 20);
+  ctx.restore();
+}
+
+function drawSeaweed(x, baseY, seed) {
+  ctx.save();
+  ctx.strokeStyle = '#1b7a4b';
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.55;
+  const sway = Math.sin(time*1.5 + seed) * 14;
+  ctx.beginPath();
+  ctx.moveTo(x, baseY);
+  ctx.quadraticCurveTo(x + sway, baseY - 60, x + sway*0.5, baseY - 130);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlatform(p) {
+  // rock base
+  ctx.fillStyle = '#8a5a3c';
+  roundRect(p.x, p.y, p.w, p.h, 8); ctx.fill();
+  // sandy/coral top
+  ctx.fillStyle = '#e0b07a';
+  roundRect(p.x, p.y, p.w, 8, 6); ctx.fill();
+  // coral bumps
+  ctx.fillStyle = '#ff8fab';
+  for (let i=0;i<p.w;i+=34) {
+    ctx.beginPath(); ctx.arc(p.x+14+i, p.y+1, 5, Math.PI, 0); ctx.fill();
+  }
+}
+
+function drawOneUp(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  // sparkly glowing bubble
+  const pulse = 0.3 + 0.15*Math.sin(time*5);
+  ctx.fillStyle = 'rgba(255,120,170,' + pulse + ')';
+  ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI*2); ctx.stroke();
+  // heart
+  ctx.fillStyle = '#ff3d6e';
+  ctx.beginPath();
+  ctx.moveTo(0, 8);
+  ctx.bezierCurveTo(-12, -4, -12, -14, 0, -6);
+  ctx.bezierCurveTo(12, -14, 12, -4, 0, 8);
+  ctx.fill();
+  // shine
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.beginPath(); ctx.arc(-4, -4, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawShell(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  // glow
+  ctx.fillStyle = 'rgba(255,224,240,0.35)';
+  ctx.beginPath(); ctx.arc(0,0,16,0,Math.PI*2); ctx.fill();
+  // shell body
+  ctx.fillStyle = '#ff70a6';
+  ctx.beginPath();
+  ctx.moveTo(0, 10);
+  ctx.bezierCurveTo(-14, 6, -12, -12, 0, -12);
+  ctx.bezierCurveTo(12, -12, 14, 6, 0, 10);
+  ctx.fill();
+  // ridges
+  ctx.strokeStyle = '#d63384';
+  ctx.lineWidth = 1.6;
+  for (let a=-3; a<=3; a++) {
+    ctx.beginPath(); ctx.moveTo(0, 8);
+    ctx.lineTo(a*3.5, -11); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawChest(g) {
+  ctx.save();
+  ctx.translate(g.x, g.y);
+  // sparkle glow
+  ctx.fillStyle = 'rgba(255,215,120,'+ (0.25+0.15*Math.sin(time*3)) +')';
+  ctx.beginPath(); ctx.arc(g.w/2, g.h/2, 46, 0, Math.PI*2); ctx.fill();
+  // base
+  ctx.fillStyle = '#8a5a2b';
+  roundRect(0, 18, g.w, g.h-18, 6); ctx.fill();
+  // lid
+  ctx.fillStyle = '#a6702f';
+  roundRect(0, 6, g.w, 20, 8); ctx.fill();
+  // bands
+  ctx.fillStyle = '#ffd166';
+  ctx.fillRect(6, 6, 6, g.h-6);
+  ctx.fillRect(g.w-12, 6, 6, g.h-6);
+  ctx.fillRect(0, 22, g.w, 6);
+  // lock
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath(); ctx.arc(g.w/2, 30, 7, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawPop(p) {
+  const t = 1 - p.life/20; // 0..1
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.globalAlpha = 1 - t;
+  // expanding ring
+  ctx.strokeStyle = '#caf0f8';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, 8 + t*26, 0, Math.PI*2); ctx.stroke();
+  // little bubbles flying out
+  ctx.fillStyle = '#ffffff';
+  for (let i=0;i<6;i++) {
+    const a = i/6*Math.PI*2;
+    const r = 6 + t*24;
+    ctx.beginPath(); ctx.arc(Math.cos(a)*r, Math.sin(a)*r, 3*(1-t)+1, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCrab(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  const legw = Math.sin(e.phase*3) * 2;
+  // legs
+  ctx.strokeStyle = '#b5170f'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  for (let i=-1;i<=1;i++) {
+    ctx.beginPath(); ctx.moveTo(i*8, 6); ctx.lineTo(i*8-6+legw, 16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(i*8, 6); ctx.lineTo(i*8+6-legw, 16); ctx.stroke();
+  }
+  // claws
+  ctx.fillStyle = '#c9271b';
+  ctx.beginPath(); ctx.ellipse(-22, 2, 7, 5, 0.4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(22, 2, 7, 5, -0.4, 0, Math.PI*2); ctx.fill();
+  // body
+  ctx.fillStyle = '#e5392b';
+  ctx.beginPath(); ctx.ellipse(0, 0, 20, 13, 0, 0, Math.PI*2); ctx.fill();
+  // eye stalks
+  ctx.strokeStyle = '#c9271b'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-6,-10); ctx.lineTo(-6,-16); ctx.moveTo(6,-10); ctx.lineTo(6,-16); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-6,-17,3,0,Math.PI*2); ctx.arc(6,-17,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(-6,-17,1.5,0,Math.PI*2); ctx.arc(6,-17,1.5,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawJelly(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  const t = Math.sin(e.phase*2) * 3;
+  // glow
+  ctx.fillStyle = 'rgba(200,150,255,0.25)';
+  ctx.beginPath(); ctx.arc(0,-4,22,0,Math.PI*2); ctx.fill();
+  // tentacles
+  ctx.strokeStyle = 'rgba(230,180,255,0.85)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  for (let i=-3;i<=3;i++) {
+    ctx.beginPath(); ctx.moveTo(i*3, 4);
+    ctx.quadraticCurveTo(i*3 + t, 16, i*3 - t, 26); ctx.stroke();
+  }
+  // bell
+  ctx.fillStyle = '#d8a7ff';
+  ctx.beginPath();
+  ctx.moveTo(-16,4); ctx.quadraticCurveTo(-16,-18,0,-18);
+  ctx.quadraticCurveTo(16,-18,16,4); ctx.quadraticCurveTo(0,-2,-16,4); ctx.fill();
+  // inner shine
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.beginPath(); ctx.ellipse(0,-6,7,8,0,0,Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#3a1050';
+  ctx.beginPath(); ctx.arc(-5,-6,2,0,Math.PI*2); ctx.arc(5,-6,2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawAngler(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.scale(e.dir < 0 ? -1 : 1, 1);
+  // lure stalk + glowing bulb
+  ctx.strokeStyle = '#8a8a3a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(6,-14); ctx.quadraticCurveTo(24,-32,30,-14); ctx.stroke();
+  const glow = 0.5 + 0.5*Math.sin(e.phase*4);
+  ctx.fillStyle = 'rgba(180,255,120,'+(0.35+0.4*glow)+')';
+  ctx.beginPath(); ctx.arc(30,-14,11,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#dfff8a';
+  ctx.beginPath(); ctx.arc(30,-14,4,0,Math.PI*2); ctx.fill();
+  // body
+  ctx.fillStyle = '#20303a';
+  ctx.beginPath(); ctx.ellipse(0,0,22,16,0,0,Math.PI*2); ctx.fill();
+  // tail
+  ctx.beginPath(); ctx.moveTo(-18,0); ctx.lineTo(-30,-8); ctx.lineTo(-30,8); ctx.closePath(); ctx.fill();
+  // gaping mouth
+  ctx.fillStyle = '#0e1a20';
+  ctx.beginPath(); ctx.ellipse(10,5,12,7,0,0,Math.PI); ctx.fill();
+  // teeth
+  ctx.fillStyle = '#fff';
+  for (let i=0;i<5;i++) {
+    const tx = 2 + i*4;
+    ctx.beginPath(); ctx.moveTo(tx,6); ctx.lineTo(tx+2,12); ctx.lineTo(tx+4,6); ctx.closePath(); ctx.fill();
+  }
+  // eye
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(6,-4,4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(7,-4,2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawEel(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.scale(e.dir < 0 ? -1 : 1, 1);
+  ctx.fillStyle = '#3fae6a';
+  ctx.beginPath();
+  ctx.moveTo(-26, 0);
+  for (let i=-26;i<=18;i+=6) { const yy = Math.sin(e.phase*2 + i*0.2)*5; ctx.lineTo(i, yy-7); }
+  for (let i=18;i>=-26;i-=6) { const yy = Math.sin(e.phase*2 + i*0.2)*5; ctx.lineTo(i, yy+7); }
+  ctx.closePath(); ctx.fill();
+  // head
+  const hy = Math.sin(e.phase*2 + 18*0.2) * 5;
+  ctx.fillStyle = '#4fc07a';
+  ctx.beginPath(); ctx.arc(18, hy, 10, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(22, hy-2, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(23, hy-2, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#2e7d4f'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(20,hy+4); ctx.lineTo(28,hy+4); ctx.stroke();
+  ctx.restore();
+}
+
+function drawKraken(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  const t = e.phase;
+  // tentacles (waving below)
+  ctx.fillStyle = '#5a2a8a';
+  for (let i=-3;i<=3;i++) {
+    const baseX = i*14;
+    const sway = Math.sin(t*2 + i) * 16;
+    ctx.beginPath();
+    ctx.moveTo(baseX-7, 30);
+    ctx.quadraticCurveTo(baseX + sway, 70, baseX + sway*0.6, 102);
+    ctx.quadraticCurveTo(baseX + sway*1.4, 72, baseX+7, 30);
+    ctx.fill();
+  }
+  // mantle
+  ctx.fillStyle = '#7b3fb0';
+  ctx.beginPath(); ctx.arc(0, 0, 48, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#6a2f9e';
+  ctx.beginPath(); ctx.arc(-20,-30,14,0,Math.PI*2); ctx.arc(20,-30,14,0,Math.PI*2); ctx.fill();
+  // angry glowing eyes
+  ctx.fillStyle = '#ffe08a';
+  ctx.beginPath(); ctx.arc(-18,-8,14,0,Math.PI*2); ctx.arc(18,-8,14,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-16,-6,6,0,Math.PI*2); ctx.arc(20,-6,6,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#3a1030'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-30,-24); ctx.lineTo(-8,-16); ctx.moveTo(30,-24); ctx.lineTo(8,-16); ctx.stroke();
+  // mouth
+  ctx.fillStyle = '#3a1030';
+  ctx.beginPath(); ctx.arc(0, 22, 12, 0, Math.PI); ctx.fill();
+  ctx.restore();
+}
+
+function drawPuffer(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  const puff = 1 + Math.sin(e.phase)*0.12;
+  ctx.scale(puff, puff);
+  // spikes
+  ctx.fillStyle = '#e76f51';
+  for (let a=0;a<12;a++) {
+    const ang = a/12*Math.PI*2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(ang)*14, Math.sin(ang)*14);
+    ctx.lineTo(Math.cos(ang)*22, Math.sin(ang)*22);
+    ctx.lineTo(Math.cos(ang+0.25)*14, Math.sin(ang+0.25)*14);
+    ctx.fill();
+  }
+  // body
+  ctx.fillStyle = '#f4a261';
+  ctx.beginPath(); ctx.arc(0,0,15,0,Math.PI*2); ctx.fill();
+  // belly
+  ctx.fillStyle = '#ffe8d6';
+  ctx.beginPath(); ctx.arc(0,4,9,0,Math.PI); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-5,-3,4,0,Math.PI*2); ctx.arc(5,-3,4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(-4,-3,2,0,Math.PI*2); ctx.arc(6,-3,2,0,Math.PI*2); ctx.fill();
+  // frown
+  ctx.strokeStyle = '#a63';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, 9, 4, Math.PI, 0); ctx.stroke();
+  ctx.restore();
+}
+
+function drawAxolotl(p) {
+  ctx.save();
+  ctx.translate(p.x + p.w/2, p.y + p.h/2);
+  ctx.scale(p.facing, 1);
+  if (p.invuln > 0 && Math.floor(p.invuln/5)%2===0) ctx.globalAlpha = 0.4;
+
+  const wob = Math.sin(p.wiggle)*2;
+
+  // Tail
+  ctx.fillStyle = '#ff9ecf';
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.quadraticCurveTo(-34, -8+wob, -30, 6);
+  ctx.quadraticCurveTo(-34, 14+wob, -18, 8);
+  ctx.fill();
+
+  // Body
+  ctx.fillStyle = '#ffb3d9';
+  roundRectPath(-20, -12, 40, 26, 13); ctx.fill();
+
+  // Belly
+  ctx.fillStyle = '#ffd6ea';
+  roundRectPath(-14, 0, 30, 12, 8); ctx.fill();
+
+  // Legs
+  ctx.fillStyle = '#ff9ecf';
+  ctx.beginPath(); ctx.ellipse(-6, 14, 5, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10, 14, 5, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  // Head
+  ctx.fillStyle = '#ffb3d9';
+  ctx.beginPath(); ctx.arc(16, -2, 15, 0, Math.PI*2); ctx.fill();
+
+  // Feathery gills (the axolotl look!)
+  ctx.strokeStyle = '#ff5c8a';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  for (let i=-1;i<=1;i++) {
+    const gy = -8 + i*7;
+    ctx.beginPath();
+    ctx.moveTo(8, gy);
+    ctx.quadraticCurveTo(2 + wob, gy-6, -4, gy-4);
+    ctx.stroke();
+  }
+  // little gill puffs
+  ctx.fillStyle = '#ff85ad';
+  for (let i=-1;i<=1;i++) {
+    ctx.beginPath(); ctx.arc(-4, -8 + i*7 -4, 3.5, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(20, -5, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(22, -5, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(23, -6, 1, 0, Math.PI*2); ctx.fill();
+
+  // Smile
+  ctx.strokeStyle = '#d6336c';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(20, 0, 5, 0.1, Math.PI-0.4); ctx.stroke();
+
+  // Rosy cheek
+  ctx.fillStyle = 'rgba(255,120,170,0.5)';
+  ctx.beginPath(); ctx.arc(13, 2, 3.5, 0, Math.PI*2); ctx.fill();
+
+  // Sword — held out front; swings in an arc while p.swing counts down
+  const prog = p.swing > 0 ? (10 - p.swing) / 10 : (p.swingCd > 0 ? 1 : 0.15);
+  ctx.save();
+  ctx.translate(20, 6);
+  ctx.rotate(-1.15 + prog * 1.95); // arc from raised-back to slashed-down
+  // motion trail during the active swing
+  if (p.swing > 1 && p.swing < 10) {
+    ctx.strokeStyle = 'rgba(202,240,248,0.6)';
+    ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, 0, 40, -0.5, 0.5); ctx.stroke();
+  }
+  // handle
+  ctx.fillStyle = '#7a4a1e';
+  roundRectPath(-4, -2.5, 12, 5, 2); ctx.fill();
+  // guard
+  ctx.fillStyle = '#ffd166';
+  roundRectPath(7, -7, 4, 14, 2); ctx.fill();
+  // blade
+  ctx.fillStyle = '#dfeaf2';
+  ctx.beginPath();
+  ctx.moveTo(11, -4); ctx.lineTo(42, -2.5); ctx.lineTo(50, 0);
+  ctx.lineTo(42, 2.5); ctx.lineTo(11, 4); ctx.closePath(); ctx.fill();
+  // shine
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(14, -1); ctx.lineTo(42, 0.5); ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  // Shell counter
+  const collected = shells.filter(s=>s.got).length;
+  ctx.save();
+  ctx.font = 'bold 24px "Comic Sans MS", sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = 'rgba(1,42,74,0.6)';
+  ctx.lineWidth = 4;
+  // shell icon
+  drawShell(30, 34);
+  ctx.strokeText(`× ${collected} / ${shells.length}`, 50, 42);
+  ctx.fillText(`× ${collected} / ${shells.length}`, 50, 42);
+
+  // Pufferfish zapped counter
+  drawSwordIcon(34, 78);
+  const zapTxt = `× ${kills}`;
+  ctx.strokeText(zapTxt, 50, 86);
+  ctx.fillText(zapTxt, 50, 86);
+
+  // Lives (hearts)
+  for (let i=0;i<lives;i++) drawHeart(W - 40 - i*40, 30);
+
+  // Level name (top center)
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 20px "Comic Sans MS", sans-serif';
+  const lvl = `Level ${currentLevel + 1}: ${LEVELS[currentLevel].name}`;
+  ctx.strokeText(lvl, W/2, 30);
+  ctx.fillText(lvl, W/2, 30);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function drawSwordIcon(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.6);
+  // blade
+  ctx.fillStyle = '#dfeaf2';
+  ctx.beginPath();
+  ctx.moveTo(-2, -14); ctx.lineTo(2, -14); ctx.lineTo(3, 6); ctx.lineTo(0, 10); ctx.lineTo(-3, 6);
+  ctx.closePath(); ctx.fill();
+  // guard
+  ctx.fillStyle = '#ffd166';
+  ctx.fillRect(-6, 6, 12, 3);
+  // handle
+  ctx.fillStyle = '#7a4a1e';
+  ctx.fillRect(-2, 9, 4, 7);
+  ctx.restore();
+}
+
+function drawHeart(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#ff5c8a';
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.bezierCurveTo(-10, -6, -14, 6, 0, 14);
+  ctx.bezierCurveTo(14, 6, 10, -6, 0, 6);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ---------- Canvas path helpers ----------
+function roundRect(x, y, w, h, r) { roundRectPath(x,y,w,h,r); }
+function roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+// ---------- Main loop ----------
+function loop() {
+  if (state === 'playing') update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('startBtn').onclick = startGame;
+// After a loss, retry the same level; after beating the game, start fresh from Level 1
+document.getElementById('restartBtn').onclick = () => {
+  if (state === 'won') startGame();
+  else retryLevel();
+};
+
+loadLevel(0);
+loop();
+</script>
+</body>
+</html>
