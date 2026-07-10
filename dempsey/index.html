@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Star Catcher NYC</title>
 <style>
+  html, body { margin: 0; height: 100%; }
   body {
-    margin: 0;
     background: #0b1026;
     color: white;
     font-family: "Comic Sans MS", "Trebuchet MS", sans-serif;
@@ -14,23 +14,59 @@
     flex-direction: column;
     align-items: center;
     min-height: 100vh;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
   }
-  h1 { margin: 16px 0 6px 0; font-size: 32px; text-shadow: 0 0 12px #ffd34d; }
-  #hint { margin: 0 0 10px 0; opacity: 0.8; font-size: 14px; text-align: center; }
+  h1 { margin: 10px 0 4px 0; font-size: 30px; text-shadow: 0 0 12px #ffd34d; text-align: center; }
+  #hint { margin: 0 0 8px 0; opacity: 0.8; font-size: 13px; text-align: center; padding: 0 8px; }
   canvas {
     background: #1a2452;
     border: 4px solid #ffd34d;
     border-radius: 14px;
     box-shadow: 0 0 30px rgba(255, 211, 77, 0.4);
-    max-width: 95vw;
+    width: min(96vw, 800px);
+    height: auto;
+    aspect-ratio: 8 / 5;
+    max-height: 66vh;
+    touch-action: none;
   }
+  /* On-screen controls — shown only on touch screens (phones/tablets) */
+  #touch { display: none; }
+  @media (pointer: coarse) {
+    h1 { font-size: 22px; }
+    #hint { font-size: 11px; }
+    #touch {
+      display: flex; justify-content: space-between; align-items: center;
+      width: min(96vw, 800px); margin-top: 12px; gap: 12px;
+    }
+  }
+  #touch .side { display: flex; gap: 14px; }
+  .tbtn {
+    -webkit-user-select: none; user-select: none; touch-action: none;
+    border: none; border-radius: 16px;
+    background: rgba(255,211,77,0.92); color: #1a2452;
+    font-family: inherit; font-weight: bold;
+    font-size: 28px; padding: 20px 24px; min-width: 68px;
+    box-shadow: 0 5px 0 #b98f18; cursor: pointer;
+  }
+  .tbtn:active { transform: translateY(4px); box-shadow: 0 1px 0 #b98f18; }
+  .tbtn.jump { background: #ff5da2; color: white; box-shadow: 0 5px 0 #b23b70; padding: 20px 34px; }
 </style>
 </head>
 <body>
 
   <h1>⭐ Star Catcher NYC ⭐</h1>
-  <p id="hint">← → / A D move &nbsp;•&nbsp; Space / Up / W jump &nbsp;•&nbsp; M mute &nbsp;•&nbsp; Dodge 🔥 fireballs, stomp enemies, beat KING STAR! 👑</p>
+  <p id="hint">← → / A D move &nbsp;•&nbsp; Space / Up / W jump &nbsp;•&nbsp; M mute &nbsp;•&nbsp; On phone: use the buttons below 👇</p>
   <canvas id="game" width="800" height="500"></canvas>
+
+  <div id="touch">
+    <div class="side">
+      <button class="tbtn" id="btnLeft">◀</button>
+      <button class="tbtn" id="btnRight">▶</button>
+    </div>
+    <button class="tbtn jump" id="btnJump">JUMP</button>
+  </div>
 
 <script>
 // =====================================================================
@@ -320,21 +356,41 @@ function fullRestart() { worldIndex = 0; lives = START_LIVES; score = 0; gameSta
 // =====================================================================
 const keys = {};
 const CONTINUE_KEYS = [" ", "ArrowUp", "w", "W", "Enter", "r", "R"];
+
+// Advance past the menu screens (world clear / game over / win). Used by
+// both the keyboard and the on-screen JUMP button.
+function menuContinue() {
+  if (gameState === "playing" || overlayLock) return;
+  if (gameState === "worldclear") {
+    worldIndex++;
+    if (worldIndex >= WORLDS.length) { gameState = "won"; overlayLock = true; sfx.win(); }
+    else { gameState = "playing"; loadWorld(worldIndex); }
+  } else if (gameState === "gameover" || gameState === "won") { fullRestart(); }
+}
+
 document.addEventListener("keydown", (e) => {
   initAudio();
   if (e.key === "m" || e.key === "M") soundOn = !soundOn;
   keys[e.key] = true;
   if ([" ","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
-
-  if (gameState !== "playing" && !overlayLock && CONTINUE_KEYS.includes(e.key)) {
-    if (gameState === "worldclear") {
-      worldIndex++;
-      if (worldIndex >= WORLDS.length) { gameState = "won"; overlayLock = true; sfx.win(); }
-      else { gameState = "playing"; loadWorld(worldIndex); }
-    } else if (gameState === "gameover" || gameState === "won") { fullRestart(); }
-  }
+  if (CONTINUE_KEYS.includes(e.key)) menuContinue();
 });
 document.addEventListener("keyup", (e) => { keys[e.key] = false; overlayLock = false; });
+
+// ---- On-screen touch buttons (phones & tablets) ----
+function holdButton(id, key) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const press   = (e) => { e.preventDefault(); initAudio(); keys[key] = true; if (key === " ") menuContinue(); };
+  const release = (e) => { e.preventDefault(); keys[key] = false; overlayLock = false; };
+  el.addEventListener("pointerdown", press);
+  el.addEventListener("pointerup", release);
+  el.addEventListener("pointercancel", release);
+  el.addEventListener("pointerleave", release);
+}
+holdButton("btnLeft", "ArrowLeft");
+holdButton("btnRight", "ArrowRight");
+holdButton("btnJump", " ");
 
 // =====================================================================
 //  GETTING HURT
