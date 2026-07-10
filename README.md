@@ -6,7 +6,7 @@ A collection of browser games our family is making — just open the `index.html
 
 | Game | Folder | How to play |
 |------|--------|-------------|
-| ⭐ Star Catcher NYC | [`star-catcher-nyc/`](star-catcher-nyc/) | Jump across New York rooftops, catch stars, stomp goombas, dodge fireballs, and beat King Star! |
+| ⭐ Star Catcher NYC | [`dempsey/`](dempsey/) | Jump across New York rooftops, catch stars, stomp goombas, dodge fireballs, and beat King Star! |
 
 ## How to play any game
 
