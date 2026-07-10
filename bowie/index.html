@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Axol the Axolotl — Seashell Adventure</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -19,6 +19,7 @@
   }
   #wrap {
     position: relative;
+    transform-origin: center center; /* scaled by JS to fit small screens */
     box-shadow: 0 20px 60px rgba(0,0,0,0.6);
     border-radius: 16px;
     overflow: hidden;
@@ -31,26 +32,27 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: safe center; /* center when it fits, align to top (no clipping) when it doesn't */
+    overflow-y: auto;
     text-align: center;
     color: #fff;
     background: rgba(1, 42, 74, 0.82);
     backdrop-filter: blur(2px);
-    padding: 24px;
+    padding: 16px;
   }
   .overlay h1 {
-    font-size: 44px;
+    font-size: 30px;
     color: #ffd6e0;
     text-shadow: 0 3px 0 #b5179e, 0 0 20px rgba(255,214,224,0.5);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   .overlay h2 {
-    font-size: 28px;
+    font-size: 20px;
     color: #caf0f8;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
     text-shadow: 0 2px 6px rgba(0,0,0,0.4);
   }
-  .overlay p { font-size: 18px; color: #ade8f4; margin: 6px 0; line-height: 1.5; }
+  .overlay p { font-size: 14px; color: #ade8f4; margin: 4px 0; line-height: 1.35; }
   .keycap {
     display: inline-block;
     background: #caf0f8;
@@ -62,22 +64,22 @@
     box-shadow: 0 3px 0 #7ec8e3;
   }
   button {
-    margin-top: 22px;
+    margin-top: 14px;
     font-family: inherit;
-    font-size: 24px;
+    font-size: 20px;
     font-weight: bold;
     color: #013a63;
     background: linear-gradient(#ffe08a, #ffb703);
     border: none;
     border-radius: 40px;
-    padding: 14px 40px;
+    padding: 11px 30px;
     cursor: pointer;
     box-shadow: 0 6px 0 #d68f00, 0 8px 20px rgba(0,0,0,0.35);
     transition: transform .08s, box-shadow .08s;
   }
   button:active { transform: translateY(4px); box-shadow: 0 2px 0 #d68f00; }
   .hidden { display: none; }
-  .small { font-size: 15px; color: #90e0ef; margin-top: 18px; }
+  .small { font-size: 13px; color: #90e0ef; margin-top: 8px; }
 
   #speedControls {
     position: absolute;
@@ -99,6 +101,31 @@
   }
   #speedControls button:active { transform: translateY(3px); box-shadow: 0 0 0 #d68f00; }
   #speedLabel { min-width: 96px; text-align: center; font-weight: bold; }
+
+  /* On-screen touch controls (shown only on touch devices, during play) */
+  #touchControls {
+    position: fixed; inset: 0; z-index: 20;
+    display: none; pointer-events: none;
+  }
+  #touchControls .tc-group {
+    position: absolute; bottom: 18px;
+    display: flex; gap: 16px; pointer-events: auto;
+  }
+  #touchControls .tc-left  { left: 18px; }
+  #touchControls .tc-right { right: 18px; align-items: flex-end; }
+  .tcBtn {
+    margin: 0; padding: 0;
+    width: 76px; height: 76px;
+    border: none; border-radius: 50%;
+    background: rgba(2, 62, 105, 0.5);
+    color: #fff; font-size: 32px; line-height: 1;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: center;
+    touch-action: none; -webkit-user-select: none; user-select: none;
+  }
+  .tcBtn:active { transform: translateY(3px); background: rgba(2, 62, 105, 0.85); box-shadow: 0 1px 0 rgba(0,0,0,0.3); }
+  #tcJump { width: 92px; height: 92px; font-size: 30px; background: rgba(255, 183, 3, 0.55); }
+  #tcSword { background: rgba(181, 23, 158, 0.55); }
 </style>
 </head>
 <body>
@@ -129,6 +156,18 @@
     <h2 id="endMsg"></h2>
     <p id="endStats"></p>
     <button id="restartBtn">Play Again</button>
+  </div>
+</div>
+
+<!-- On-screen controls for phones/tablets (shown only on touch devices while playing) -->
+<div id="touchControls">
+  <div class="tc-group tc-left">
+    <button id="tcLeft" class="tcBtn" aria-label="Swim left">◀</button>
+    <button id="tcRight" class="tcBtn" aria-label="Swim right">▶</button>
+  </div>
+  <div class="tc-group tc-right">
+    <button id="tcSword" class="tcBtn" aria-label="Swing sword">⚔️</button>
+    <button id="tcJump" class="tcBtn" aria-label="Jump">⬆</button>
   </div>
 </div>
 
@@ -1256,6 +1295,7 @@ function roundRectPath(x, y, w, h, r) {
 function loop() {
   if (state === 'playing') update();
   draw();
+  touchEl.style.display = (isTouch && state === 'playing') ? 'block' : 'none';
   requestAnimationFrame(loop);
 }
 
@@ -1265,6 +1305,40 @@ document.getElementById('restartBtn').onclick = () => {
   if (state === 'won') startGame();
   else retryLevel();
 };
+
+// ---------- Fit the whole game to the screen (scales down on small displays) ----------
+const wrap = document.getElementById('wrap');
+function fitScreen() {
+  const s = Math.min(window.innerWidth / 900, window.innerHeight / 560, 1);
+  wrap.style.transform = 'scale(' + s + ')';
+}
+addEventListener('resize', fitScreen);
+addEventListener('orientationchange', fitScreen);
+fitScreen();
+
+// ---------- Touch controls (phones / tablets) ----------
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const touchEl = document.getElementById('touchControls');
+function holdBtn(id, key) {
+  const el = document.getElementById(id);
+  const down = e => { e.preventDefault(); keys[key] = true; };
+  const up   = e => { e.preventDefault(); keys[key] = false; };
+  el.addEventListener('touchstart', down, { passive: false });
+  el.addEventListener('touchend', up, { passive: false });
+  el.addEventListener('touchcancel', up, { passive: false });
+  el.addEventListener('mousedown', down);
+  el.addEventListener('mouseup', up);
+  el.addEventListener('mouseleave', up);
+}
+holdBtn('tcLeft', 'arrowleft');
+holdBtn('tcRight', 'arrowright');
+holdBtn('tcJump', 'space');       // jumpKey check already includes keys['space']
+(function () {
+  const sw = document.getElementById('tcSword');
+  const fire = e => { e.preventDefault(); doSwing(); };
+  sw.addEventListener('touchstart', fire, { passive: false });
+  sw.addEventListener('mousedown', fire);
+})();
 
 loadLevel(0);
 loop();
